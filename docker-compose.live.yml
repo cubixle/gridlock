@@ -1,0 +1,17 @@
+version: "3"
+
+services:
+    server:
+        image: helprob:latest
+        restart: always
+        container_name: helprob
+        environment:
+          - "LOG_FILE_DIR=/var/logs/helprob"
+          - "DOMAIN=honey.cubixle.me"
+        ports:
+          - "127.0.0.1:8070:8070"
+        volumes: 
+          - logs:/var/logs/helprob
+
+volumes: 
+  logs:

@@ -1,0 +1,4 @@
+github.com/monperrus/crawler-user-agents v0.0.0-20240409084354-0ef518e13a54 h1:48D4Yh5je6RjAZDu6RY+exL0l+EqGy8s9oHlaiuwIy0=
+github.com/monperrus/crawler-user-agents v0.0.0-20240409084354-0ef518e13a54/go.mod h1:GfRyKbsbxSrRxTPYnVi4U/0stQd6BcFCxDy6i6IxQ0M=
+golang.org/x/text v0.14.0 h1:ScX5w1eTa3QqT8oi6+ziP7dTV1S2+ALU0bI+0zXKWiQ=
+golang.org/x/text v0.14.0/go.mod h1:18ZOQIKpY8NJVqYksKHtTdi31H5itFRjB5/qKTNYzSU=
