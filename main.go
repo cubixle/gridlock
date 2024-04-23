@@ -1,12 +1,15 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"log/slog"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,24 +23,16 @@ import (
 
 var (
 	stats  = map[string]int{}
-	ticker = time.NewTicker(10 * time.Second)
+	ticker = time.NewTicker(10 * time.Minute)
 )
-
-func getEnv(key, fallback string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	return value
-}
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: slog.LevelDebug,
 	}))
 	slog.SetDefault(logger)
 
-	domain := getEnv("DOMAIN", "0.0.0.0:8070")
+	domain := cmp.Or(os.Getenv("DOMAIN"), "0.0.0.0:8070")
 
 	srv := http.NewServeMux()
 	srv.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +46,8 @@ func main() {
 		_, _ = w.Write([]byte(``))
 	})
 
+	srv.HandleFunc("/stats", fileHandler)
+
 	srv.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// generate links1 to 7 from the names list and populate the template
 		// with the links
@@ -61,7 +58,7 @@ func main() {
 			"x_forwarded_for", r.Header.Get("X-Forwarded-For"),
 		)
 
-		if !agents.IsCrawler(r.UserAgent()) {
+		if agents.IsCrawler(r.UserAgent()) {
 			slog.Info("crawler detected", "user_agent", r.UserAgent())
 			// remove all commas from simpler CSV handling.
 			ua := strings.ReplaceAll(r.UserAgent(), ",", "")
@@ -73,7 +70,7 @@ func main() {
 		}
 
 		currentName := "Ziggy"
-		// get current name from the subdomai#e8c4c2n
+		// get current name from the subdomain
 		if strings.Contains(r.Host, ".") {
 			currentName = strings.Split(r.Host, ".")[0]
 			currentName = strings.ReplaceAll(currentName, "-", " ")
@@ -83,7 +80,7 @@ func main() {
 
 		baseLink := "http://%s." + domain + "/"
 
-		content := template
+		content := indexTemplate
 		content = strings.ReplaceAll(content, "{{img}}", img)
 		content = strings.ReplaceAll(content, "{{current_name}}", currentName)
 
@@ -127,11 +124,90 @@ func main() {
 	log.Fatal(err)
 }
 
-func writeStatsToFile() error {
-	fileDir := getEnv("LOG_FILE_DIR", "./logs/helprob")
-	if fileDir == "" {
-		return nil
+func safeJoin(baseDir, targetDir string) (string, error) {
+	// Clean and absolute paths
+	basePath, err := filepath.Abs(filepath.Clean(baseDir))
+	if err != nil {
+		return "", err
 	}
+
+	targetPath, err := filepath.Abs(filepath.Clean(filepath.Join(basePath, targetDir)))
+	if err != nil {
+		return "", err
+	}
+
+	// Prevent directory traversal
+	if !strings.HasPrefix(targetPath, basePath) {
+		return "", fmt.Errorf("invalid directory traversal attempt")
+	}
+
+	return targetPath, nil
+}
+
+func fileHandler(w http.ResponseWriter, r *http.Request) {
+	fileDir := cmp.Or(os.Getenv("LOG_FILE_DIR"), "logs/helprob")
+
+	requestedDir, err := url.QueryUnescape(r.URL.Query().Get("dir"))
+	if err != nil {
+		http.Error(w, "Invalid path.", http.StatusBadRequest)
+		return
+	}
+
+	path, err := safeJoin(fileDir, requestedDir)
+	if err != nil {
+		http.Error(w, "Invalid path.", http.StatusBadRequest)
+		return
+	}
+
+	slog.Debug("reading path", "path", path)
+
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		http.Error(w, "File not found.", http.StatusNotFound)
+		return
+	}
+
+	slog.Debug("reading path", "path", path, "info", fileInfo)
+
+	if fileInfo.IsDir() {
+		files, err := os.ReadDir(path)
+		if err != nil {
+			http.Error(w, "Could not read directory.", http.StatusInternalServerError)
+			return
+		}
+
+		entries := make([]string, 0, len(files))
+		for _, file := range files {
+			entries = append(entries, url.QueryEscape(file.Name()))
+		}
+
+		fileTemplate.Execute(w, struct {
+			BaseDir string
+			Path    string
+			Entries []string
+		}{
+			BaseDir: fileDir,
+			Path:    requestedDir,
+			Entries: entries,
+		})
+	} else {
+		// Handle CSV file viewing
+		if strings.HasSuffix(path, ".csv") {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				http.Error(w, "Could not read file.", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Write(data)
+		} else {
+			http.Error(w, "Unsupported file type.", http.StatusUnsupportedMediaType)
+		}
+	}
+}
+
+func writeStatsToFile() error {
+	fileDir := cmp.Or(os.Getenv("LOG_FILE_DIR"), "./logs/helprob")
 
 	slog.Info("Configured to write stats file", "destination", fileDir)
 
@@ -206,7 +282,21 @@ func writeStatsToFile() error {
 	return nil
 }
 
-var template = `
+var fileTemplate = template.Must(template.New("files").Parse(`
+<html>
+<head><title>Stats</title></head>
+<body>
+<h1>Stats</h1>
+<ul>
+{{- range .Entries}}
+    <li><a href="/stats?dir={{$.Path}}/{{.}}">{{.}}</a></li>
+{{- end}}
+</ul>
+</body>
+</html>
+`))
+
+var indexTemplate = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
