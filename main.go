@@ -145,7 +145,7 @@ func safeJoin(baseDir, targetDir string) (string, error) {
 }
 
 func fileHandler(w http.ResponseWriter, r *http.Request) {
-	fileDir := cmp.Or(os.Getenv("LOG_FILE_DIR"), "logs/helprob")
+	fileDir := cmp.Or(os.Getenv("LOG_FILE_DIR"), "logs/gridlock")
 
 	requestedDir, err := url.QueryUnescape(r.URL.Query().Get("dir"))
 	if err != nil {
@@ -207,7 +207,7 @@ func fileHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeStatsToFile() error {
-	fileDir := cmp.Or(os.Getenv("LOG_FILE_DIR"), "./logs/helprob")
+	fileDir := cmp.Or(os.Getenv("LOG_FILE_DIR"), "./logs/gridlock")
 
 	slog.Info("Configured to write stats file", "destination", fileDir)
 
